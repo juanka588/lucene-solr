@@ -14,20 +14,33 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.lucene.index;
+
+package org.apache.lucene.codecs.lucene90;
+
 
 import java.io.IOException;
 
-import org.apache.lucene.search.DocIdSetIterator;
+import org.apache.lucene.store.IndexInput;
+import org.apache.lucene.store.IndexOutput;
+import org.apache.lucene.util.IOSupplier;
+import org.apache.lucene.util.LongValues;
 
-public abstract class DocValuesIterator extends DocIdSetIterator {
+/**
+ * Represent an iterator of long elements
+ */
+public interface LongIterator {
+  long size();
 
-  /** Advance the iterator to exactly {@code target} and return whether
-   *  {@code target} has a value.
-   *  {@code target} must be greater than or equal to the current
-   *  {@link #docID() doc ID} and must be a valid doc ID, ie. &ge; 0 and
-   *  &lt; {@code maxDoc}.
-   *  After this method returns, {@link #docID()} retuns {@code target}. */
-  public abstract boolean advanceExact(int target) throws IOException;
+  long next() throws IOException;
 
+  int numBitsPerValue();
+
+  interface Serializer {
+    /**
+     * @return the file pointer to position the {@link IndexInput} for reading the elements
+     */
+    long write(IndexOutput dataOutput, LongIterator longIterator) throws IOException;
+
+    IOSupplier<LongValues> read(IndexInput blockInput, long metadataFP) throws IOException;
+  }
 }

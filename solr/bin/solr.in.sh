@@ -19,7 +19,7 @@
 # By default the script will use JAVA_HOME to determine which java
 # to use, but you can set a specific path for Solr to use without
 # affecting other Java applications on your server/workstation.
-#SOLR_JAVA_HOME=""
+SOLR_JAVA_HOME="/Library/Java/JavaVirtualMachines/openjdk-12.0.1.jdk/Contents/Home"
 
 # This controls the number of seconds that the solr script will wait for
 # Solr to stop gracefully or Solr to start.  If the graceful stop fails,
@@ -191,7 +191,7 @@
 # Different limits can be set in solr.in.sh or your profile if you prefer as well.
 #SOLR_RECOMMENDED_OPEN_FILES=
 #SOLR_RECOMMENDED_MAX_PROCESSES=
-#SOLR_ULIMIT_CHECKS=
+SOLR_ULIMIT_CHECKS=false
 
 # When running Solr in non-cloud mode and if planning to do distributed search (using the "shards" parameter), the
 # list of hosts needs to be whitelisted or Solr will forbid the request. The whitelist can be configured in solr.xml,

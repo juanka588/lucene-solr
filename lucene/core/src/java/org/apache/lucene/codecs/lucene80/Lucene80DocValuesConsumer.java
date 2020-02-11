@@ -37,7 +37,6 @@ import org.apache.lucene.index.SegmentWriteState;
 import org.apache.lucene.index.SortedDocValues;
 import org.apache.lucene.index.SortedNumericDocValues;
 import org.apache.lucene.index.SortedSetDocValues;
-import org.apache.lucene.index.TermsEnum;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.SortedSetSelector;
 import org.apache.lucene.store.ByteBuffersDataOutput;
@@ -46,6 +45,8 @@ import org.apache.lucene.store.IndexOutput;
 import org.apache.lucene.util.ArrayUtil;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.BytesRefBuilder;
+import org.apache.lucene.util.BytesRefIterator;
+import org.apache.lucene.util.IOSupplier;
 import org.apache.lucene.util.IOUtils;
 import org.apache.lucene.util.MathUtil;
 import org.apache.lucene.util.StringHelper;
@@ -57,7 +58,7 @@ import static org.apache.lucene.codecs.lucene80.Lucene80DocValuesFormat.NUMERIC_
 import static org.apache.lucene.codecs.lucene80.Lucene80DocValuesFormat.NUMERIC_BLOCK_SIZE;
 
 /** writer for {@link Lucene80DocValuesFormat} */
-final class Lucene80DocValuesConsumer extends DocValuesConsumer implements Closeable {
+class Lucene80DocValuesConsumer extends DocValuesConsumer implements Closeable {
 
   IndexOutput data, meta;
   final int maxDoc;
@@ -79,6 +80,11 @@ final class Lucene80DocValuesConsumer extends DocValuesConsumer implements Close
         IOUtils.closeWhileHandlingException(this);
       }
     }
+  }
+
+  Lucene80DocValuesConsumer(IndexOutput data, int maxDoc) {
+    this.data = data;
+    this.maxDoc = maxDoc;
   }
 
   @Override
@@ -113,7 +119,7 @@ final class Lucene80DocValuesConsumer extends DocValuesConsumer implements Close
       public SortedNumericDocValues getSortedNumeric(FieldInfo field) throws IOException {
         return DocValues.singleton(valuesProducer.getNumeric(field));
       }
-    });
+    }, data, meta);
   }
 
   private static class MinMaxTracker {
@@ -151,7 +157,7 @@ final class Lucene80DocValuesConsumer extends DocValuesConsumer implements Close
     }
   }
 
-  private long[] writeValues(FieldInfo field, DocValuesProducer valuesProducer) throws IOException {
+  private long[] writeValues(FieldInfo field, DocValuesProducer valuesProducer, IndexOutput data, IndexOutput meta) throws IOException {
     SortedNumericDocValues values = valuesProducer.getSortedNumeric(field);
     int numDocsWithValue = 0;
     MinMaxTracker minMax = new MinMaxTracker();
@@ -358,6 +364,10 @@ final class Lucene80DocValuesConsumer extends DocValuesConsumer implements Close
     meta.writeInt(field.number);
     meta.writeByte(Lucene80DocValuesFormat.BINARY);
 
+    doAddBinary(field, valuesProducer, data, meta);
+  }
+
+  protected void doAddBinary(FieldInfo field, DocValuesProducer valuesProducer, IndexOutput data, IndexOutput meta) throws IOException {
     BinaryDocValues values = valuesProducer.getBinary(field);
     long start = data.getFilePointer();
     meta.writeLong(start); // dataOffset
@@ -469,11 +479,10 @@ final class Lucene80DocValuesConsumer extends DocValuesConsumer implements Close
       meta.writeLong(data.getFilePointer() - start); // ordsLength
     }
 
-    addTermsDict(DocValues.singleton(valuesProducer.getSorted(field)));
+    addTermsDict(values::termsEnum, data, meta, values.getValueCount());
   }
 
-  private void addTermsDict(SortedSetDocValues values) throws IOException {
-    final long size = values.getValueCount();
+  static void addTermsDict(IOSupplier<BytesRefIterator> supplier, IndexOutput data, IndexOutput meta, long size) throws IOException {
     meta.writeVLong(size);
     meta.writeInt(Lucene80DocValuesFormat.TERMS_DICT_BLOCK_SHIFT);
 
@@ -487,7 +496,7 @@ final class Lucene80DocValuesConsumer extends DocValuesConsumer implements Close
     long ord = 0;
     long start = data.getFilePointer();
     int maxLength = 0;
-    TermsEnum iterator = values.termsEnum();
+    BytesRefIterator iterator = supplier.get();
     for (BytesRef term = iterator.next(); term != null; term = iterator.next()) {
       if ((ord & Lucene80DocValuesFormat.TERMS_DICT_BLOCK_MASK) == 0) {
         writer.add(data.getFilePointer() - start);
@@ -521,11 +530,10 @@ final class Lucene80DocValuesConsumer extends DocValuesConsumer implements Close
     meta.writeLong(data.getFilePointer() - start);
 
     // Now write the reverse terms index
-    writeTermsIndex(values);
+    writeTermsIndex(supplier, data, meta, size);
   }
 
-  private void writeTermsIndex(SortedSetDocValues values) throws IOException {
-    final long size = values.getValueCount();
+  static void writeTermsIndex(IOSupplier<BytesRefIterator> supplier, IndexOutput data, IndexOutput meta, long size) throws IOException {
     meta.writeInt(Lucene80DocValuesFormat.TERMS_DICT_REVERSE_INDEX_SHIFT);
     long start = data.getFilePointer();
 
@@ -534,7 +542,7 @@ final class Lucene80DocValuesConsumer extends DocValuesConsumer implements Close
     DirectMonotonicWriter writer;
     try (ByteBuffersIndexOutput addressOutput = new ByteBuffersIndexOutput(addressBuffer, "temp", "temp")) {
       writer = DirectMonotonicWriter.getInstance(meta, addressOutput, numBlocks, DIRECT_MONOTONIC_BLOCK_SHIFT);
-      TermsEnum iterator = values.termsEnum();
+      BytesRefIterator iterator = supplier.get();
       BytesRefBuilder previous = new BytesRefBuilder();
       long offset = 0;
       long ord = 0;
@@ -571,7 +579,11 @@ final class Lucene80DocValuesConsumer extends DocValuesConsumer implements Close
     meta.writeInt(field.number);
     meta.writeByte(Lucene80DocValuesFormat.SORTED_NUMERIC);
 
-    long[] stats = writeValues(field, valuesProducer);
+    doAddSortedNumeric(field, valuesProducer, data, meta);
+  }
+
+  protected void doAddSortedNumeric(FieldInfo field, DocValuesProducer valuesProducer, IndexOutput data, IndexOutput meta) throws IOException {
+    long[] stats = writeValues(field, valuesProducer, data, meta);
     int numDocsWithField = Math.toIntExact(stats[0]);
     long numValues = stats[1];
     assert numValues >= numDocsWithField;
@@ -600,6 +612,10 @@ final class Lucene80DocValuesConsumer extends DocValuesConsumer implements Close
     meta.writeInt(field.number);
     meta.writeByte(Lucene80DocValuesFormat.SORTED_SET);
 
+    doAddSortedSet(field, valuesProducer, data, meta);
+  }
+
+  private void doAddSortedSet(FieldInfo field, DocValuesProducer valuesProducer, IndexOutput data, IndexOutput meta) throws IOException {
     SortedSetDocValues values = valuesProducer.getSortedSet(field);
     int numDocsWithField = 0;
     long numOrds = 0;
@@ -672,6 +688,6 @@ final class Lucene80DocValuesConsumer extends DocValuesConsumer implements Close
     addressesWriter.finish();
     meta.writeLong(data.getFilePointer() - start); // addressesLength
 
-    addTermsDict(values);
+    addTermsDict(values::termsEnum, data, meta, values.getValueCount());
   }
 }

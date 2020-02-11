@@ -14,20 +14,30 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.lucene.index;
+
+package org.apache.lucene.codecs.lucene90;
 
 import java.io.IOException;
 
-import org.apache.lucene.search.DocIdSetIterator;
+import org.apache.lucene.codecs.Codec;
+import org.apache.lucene.codecs.lucene80.TestLucene80DocValuesFormat;
+import org.apache.lucene.util.TestUtil;
 
-public abstract class DocValuesIterator extends DocIdSetIterator {
+public class TestLucene90DocValuesFormat extends TestLucene80DocValuesFormat {
+  private final Codec codec = TestUtil.alwaysDocValuesFormat(new CompoundDocValuesFormat());
 
-  /** Advance the iterator to exactly {@code target} and return whether
-   *  {@code target} has a value.
-   *  {@code target} must be greater than or equal to the current
-   *  {@link #docID() doc ID} and must be a valid doc ID, ie. &ge; 0 and
-   *  &lt; {@code maxDoc}.
-   *  After this method returns, {@link #docID()} retuns {@code target}. */
-  public abstract boolean advanceExact(int target) throws IOException;
+  @Override
+  protected Codec getCodec() {
+    return codec;
+  }
 
+  @Override
+  public void testMergeStability() throws Exception {
+    // ignore as we use V encoding file pointers may change in size depending of data insertion order.
+  }
+
+  @Override
+  public void testRamBytesUsed() throws IOException {
+    // ignored as now doc values dynamically use heap.
+  }
 }

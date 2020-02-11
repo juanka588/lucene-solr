@@ -50,12 +50,12 @@ import org.apache.lucene.util.packed.DirectMonotonicReader;
 import org.apache.lucene.util.packed.DirectReader;
 
 /** reader for {@link Lucene80DocValuesFormat} */
-final class Lucene80DocValuesProducer extends DocValuesProducer implements Closeable {
-  private final Map<String,NumericEntry> numerics = new HashMap<>();
-  private final Map<String,BinaryEntry> binaries = new HashMap<>();
-  private final Map<String,SortedEntry> sorted = new HashMap<>();
-  private final Map<String,SortedSetEntry> sortedSets = new HashMap<>();
-  private final Map<String,SortedNumericEntry> sortedNumerics = new HashMap<>();
+class Lucene80DocValuesProducer extends DocValuesProducer implements Closeable {
+  protected final Map<String,NumericEntry> numerics = new HashMap<>();
+  protected final Map<String,BinaryEntry> binaries = new HashMap<>();
+  protected final Map<String,SortedEntry> sorted = new HashMap<>();
+  protected final Map<String,SortedSetEntry> sortedSets = new HashMap<>();
+  protected final Map<String,SortedNumericEntry> sortedNumerics = new HashMap<>();
   private long ramBytesUsed;
   private final IndexInput data;
   private final int maxDoc;
@@ -112,6 +112,11 @@ final class Lucene80DocValuesProducer extends DocValuesProducer implements Close
     }
   }
 
+  Lucene80DocValuesProducer(IndexInput data, int maxDoc) {
+    this.data = data;
+    this.maxDoc = maxDoc;
+  }
+
   private void readFields(ChecksumIndexInput meta, FieldInfos infos) throws IOException {
     for (int fieldNumber = meta.readInt(); fieldNumber != -1; fieldNumber = meta.readInt()) {
       FieldInfo info = infos.fieldInfo(fieldNumber);
@@ -135,13 +140,13 @@ final class Lucene80DocValuesProducer extends DocValuesProducer implements Close
     }
   }
 
-  private NumericEntry readNumeric(ChecksumIndexInput meta) throws IOException {
+  protected NumericEntry readNumeric(ChecksumIndexInput meta) throws IOException {
     NumericEntry entry = new NumericEntry();
     readNumeric(meta, entry);
     return entry;
   }
 
-  private void readNumeric(ChecksumIndexInput meta, NumericEntry entry) throws IOException {
+  protected void readNumeric(IndexInput meta, NumericEntry entry) throws IOException {
     entry.docsWithFieldOffset = meta.readLong();
     entry.docsWithFieldLength = meta.readLong();
     entry.jumpTableEntryCount = meta.readShort();
@@ -171,7 +176,7 @@ final class Lucene80DocValuesProducer extends DocValuesProducer implements Close
     entry.valueJumpTableOffset = meta.readLong();
   }
 
-  private BinaryEntry readBinary(ChecksumIndexInput meta) throws IOException {
+  protected BinaryEntry readBinary(IndexInput meta) throws IOException {
     BinaryEntry entry = new BinaryEntry();
     entry.dataOffset = meta.readLong();
     entry.dataLength = meta.readLong();
@@ -192,7 +197,7 @@ final class Lucene80DocValuesProducer extends DocValuesProducer implements Close
     return entry;
   }
 
-  private SortedEntry readSorted(ChecksumIndexInput meta) throws IOException {
+  protected SortedEntry readSorted(ChecksumIndexInput meta) throws IOException {
     SortedEntry entry = new SortedEntry();
     entry.docsWithFieldOffset = meta.readLong();
     entry.docsWithFieldLength = meta.readLong();
@@ -206,7 +211,7 @@ final class Lucene80DocValuesProducer extends DocValuesProducer implements Close
     return entry;
   }
 
-  private SortedSetEntry readSortedSet(ChecksumIndexInput meta) throws IOException {
+  protected SortedSetEntry readSortedSet(ChecksumIndexInput meta) throws IOException {
     SortedSetEntry entry = new SortedSetEntry();
     byte multiValued = meta.readByte();
     switch (multiValued) {
@@ -235,7 +240,7 @@ final class Lucene80DocValuesProducer extends DocValuesProducer implements Close
     return entry;
   }
 
-  private static void readTermDict(ChecksumIndexInput meta, TermsDictEntry entry) throws IOException {
+  protected static void readTermDict(IndexInput meta, TermsDictEntry entry) throws IOException {
     entry.termsDictSize = meta.readVLong();
     entry.termsDictBlockShift = meta.readInt();
     final int blockShift = meta.readInt();
@@ -255,7 +260,7 @@ final class Lucene80DocValuesProducer extends DocValuesProducer implements Close
     entry.termsIndexAddressesLength = meta.readLong();
   }
 
-  private SortedNumericEntry readSortedNumeric(ChecksumIndexInput meta) throws IOException {
+  protected SortedNumericEntry readSortedNumeric(IndexInput meta) throws IOException {
     SortedNumericEntry entry = new SortedNumericEntry();
     readNumeric(meta, entry);
     entry.numDocsWithField = meta.readInt();
@@ -272,9 +277,18 @@ final class Lucene80DocValuesProducer extends DocValuesProducer implements Close
   @Override
   public void close() throws IOException {
     data.close();
+    clearEntriesMap();
   }
 
-  private static class NumericEntry {
+  protected void clearEntriesMap() {
+    binaries.clear();
+    numerics.clear();
+    sorted.clear();
+    sortedNumerics.clear();
+    sortedSets.clear();
+  }
+
+  protected static class NumericEntry {
     long[] table;
     int blockShift;
     byte bitsPerValue;
@@ -290,7 +304,7 @@ final class Lucene80DocValuesProducer extends DocValuesProducer implements Close
     long valueJumpTableOffset; // -1 if no jump-table
   }
 
-  private static class BinaryEntry {
+  protected static class BinaryEntry {
     long dataOffset;
     long dataLength;
     long docsWithFieldOffset;
@@ -305,7 +319,7 @@ final class Lucene80DocValuesProducer extends DocValuesProducer implements Close
     DirectMonotonicReader.Meta addressesMeta;
   }
 
-  private static class TermsDictEntry {
+  protected static class TermsDictEntry {
     long termsDictSize;
     int termsDictBlockShift;
     DirectMonotonicReader.Meta termsAddressesMeta;
@@ -322,7 +336,7 @@ final class Lucene80DocValuesProducer extends DocValuesProducer implements Close
     long termsIndexAddressesLength;
   }
 
-  private static class SortedEntry extends TermsDictEntry {
+  protected static class SortedEntry extends TermsDictEntry {
     long docsWithFieldOffset;
     long docsWithFieldLength;
     short jumpTableEntryCount;
@@ -333,7 +347,7 @@ final class Lucene80DocValuesProducer extends DocValuesProducer implements Close
     long ordsLength;
   }
 
-  private static class SortedSetEntry extends TermsDictEntry {
+  protected static class SortedSetEntry extends TermsDictEntry {
     SortedEntry singleValueEntry;
     long docsWithFieldOffset;
     long docsWithFieldLength;
@@ -348,7 +362,7 @@ final class Lucene80DocValuesProducer extends DocValuesProducer implements Close
     long addressesLength;
   }
 
-  private static class SortedNumericEntry extends NumericEntry {
+  protected static class SortedNumericEntry extends NumericEntry {
     int numDocsWithField;
     DirectMonotonicReader.Meta addressesMeta;
     long addressesOffset;
@@ -440,7 +454,7 @@ final class Lucene80DocValuesProducer extends DocValuesProducer implements Close
     }
   }
 
-  private NumericDocValues getNumeric(NumericEntry entry) throws IOException {
+  protected NumericDocValues getNumeric(NumericEntry entry) throws IOException {
     if (entry.docsWithFieldOffset == -2) {
       // empty
       return DocValues.emptyNumeric();
@@ -668,6 +682,10 @@ final class Lucene80DocValuesProducer extends DocValuesProducer implements Close
   @Override
   public BinaryDocValues getBinary(FieldInfo field) throws IOException {
     BinaryEntry entry = binaries.get(field.name);
+    return getBinaryDocValues(entry);
+  }
+
+  protected BinaryDocValues getBinaryDocValues(BinaryEntry entry) throws IOException {
     if (entry.docsWithFieldOffset == -2) {
       return DocValues.emptyBinary();
     }
@@ -927,7 +945,7 @@ final class Lucene80DocValuesProducer extends DocValuesProducer implements Close
     }
   }
 
-  private static class TermsDict extends BaseTermsEnum {
+  static class TermsDict extends BaseTermsEnum {
 
     final TermsDictEntry entry;
     final LongValues blockAddresses;
@@ -1115,6 +1133,10 @@ final class Lucene80DocValuesProducer extends DocValuesProducer implements Close
   @Override
   public SortedNumericDocValues getSortedNumeric(FieldInfo field) throws IOException {
     SortedNumericEntry entry = sortedNumerics.get(field.name);
+    return getSortedNumericDocValues(entry);
+  }
+
+  protected SortedNumericDocValues getSortedNumericDocValues(SortedNumericEntry entry) throws IOException {
     if (entry.numValues == entry.numDocsWithField) {
       return DocValues.singleton(getNumeric(entry));
     }
